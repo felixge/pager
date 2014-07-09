@@ -16,8 +16,10 @@ func Start(name string, arg ...string) (*Pager, error) {
 }
 
 type Pager struct {
-	cmd    *exec.Cmd
-	stdout *os.File
+	cmd        *exec.Cmd
+	pipeStdout *os.File
+	realStdout *os.File
+	waiting    bool
 }
 
 func (p *Pager) start() error {
@@ -34,38 +36,36 @@ func (p *Pager) start() error {
 	if err != nil {
 		return err
 	}
-	p.stdout = os.NewFile(uintptr(stdoutFd), "stdout backup")
+	p.realStdout = os.NewFile(uintptr(stdoutFd), "stdout backup")
 	if err := syscall.Dup2(int(w.Fd()), int(os.Stdout.Fd())); err != nil {
 		return err
 	}
+	p.pipeStdout = os.Stdout
 	if err := w.Close(); err != nil {
 		return err
 	}
+	sigCh := make(chan os.Signal)
+	signal.Notify(sigCh, os.Interrupt)
+	go func() {
+		for {
+			sig := <-sigCh
+			p.cmd.Process.Signal(sig)
+			p.pipeStdout.Close()
+		}
+	}()
 	return nil
 }
 
 func (p *Pager) Wait() error {
-	defer func() {
-		os.Stdout = p.stdout
-	}()
-	os.Stdout.Close()
-	exitCh := make(chan error)
-	go func() {
-		exitCh <- p.cmd.Wait()
-	}()
-	sigCh := make(chan os.Signal)
-	signal.Notify(sigCh, os.Interrupt)
-	for {
-		select {
-		case sig := <-sigCh:
-			p.cmd.Process.Signal(sig)
-		case err := <-exitCh:
-			os.Exit(1)
-			if err != nil {
-				return err
-			} else {
-				return nil
-			}
-		}
-	}
+	p.pipeStdout.Close()
+	os.Stdout = p.realStdout
+	return p.cmd.Wait()
+	//defer func() {
+	//os.Stdout = p.stdout
+	//}()
+	//os.Stdout.Close()
+	//exitCh := make(chan error)
+	//go func() {
+	//exitCh <- p.cmd.Wait()
+	//}()
 }

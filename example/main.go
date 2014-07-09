@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/felixge/pager"
 )
@@ -12,9 +11,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	for l := 0; l < 1000; l++ {
+	for l := 0; l < 100000; l++ {
 		fmt.Printf("Line %d\n", l)
-		time.Sleep(time.Second / 2000)
 	}
 	if err := pager.Wait(); err != nil {
 		panic(err)
